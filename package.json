@@ -1,0 +1,63 @@
+{
+  "name": "@xeplr/workflow-api",
+  "version": "1.0.0",
+  "license": "MIT",
+  "description": "The workflow HTTP API over @xeplr/workflow-engine — the routes the builder and the flows screens talk to. registerWorkflow() mounts it into a host Express app, or it runs on its own.",
+  "main": "index.js",
+  "bin": {
+    "xeplr-workflow-server": "bin/www"
+  },
+  "files": [
+    "index.js",
+    "env.required.js",
+    "lib/",
+    "migrations-auth/",
+    "orchestration/",
+    "bin/",
+    "LICENSE"
+  ],
+  "scripts": {
+    "check-env": "dotenv -e development.env -- xeplr-check-env",
+    "db:create": "dotenv -e development.env -- xeplr-migrate create-db --connectionName api --connection-env WORKFLOW_CONNECTION",
+    "db:encrypt": "dotenv -e development.env -- xeplr-db-encrypt",
+    "start-api": "NODE_ENV=development node ./bin/www",
+    "migrate:up": "dotenv -e development.env -- xeplr-migrate up --dir ../engine/migrations --connectionName api --connection-env WORKFLOW_CONNECTION",
+    "migrate:status": "dotenv -e development.env -- xeplr-migrate status --dir ../engine/migrations --connectionName api --connection-env WORKFLOW_CONNECTION",
+    "test": "node test/run.mjs"
+  },
+  "author": "xeplr",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Xeplr/xeplr-workflow-api.git"
+  },
+  "dependencies": {
+    "@xeplr/workflow-engine": "^3.0.0",
+    "dotenv": "^17.4.2"
+  },
+  "peerDependencies": {
+    "@xeplr/actions": "^1.1.0",
+    "@xeplr/auth": "^1.0.0",
+    "@xeplr/base-apis": "^2.0.2",
+    "@xeplr/db": "^1.0.0",
+    "@xeplr/email": "^1.0.0",
+    "@xeplr/schema-handler": "^1.0.0",
+    "express": "^5.2.0"
+  },
+  "devDependencies": {
+    "dotenv-cli": "^8.0.0",
+    "@xeplr/jobs": "^2.3.0",
+    "knex": "^3.3.0"
+  },
+  "xeplr": {
+    "readsFromDisk": [
+      "migrations-auth"
+    ]
+  },
+  "homepage": "https://github.com/Xeplr/xeplr-workflow-api#readme",
+  "bugs": {
+    "url": "https://github.com/Xeplr/xeplr-workflow-api/issues"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}

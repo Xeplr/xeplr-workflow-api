@@ -1,0 +1,7 @@
+#!/usr/bin/env node
+
+// All of this process's startup sequence — env loading, migrations,
+// xeplr_configs, action registration, auth wiring, and finally
+// registerWorkflow() — lives in orchestration/standalone.js now. This file
+// is just the process entry point.
+require('../orchestration/standalone');
