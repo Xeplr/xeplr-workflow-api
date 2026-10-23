@@ -2,7 +2,14 @@
   "name": "@xeplr/workflow-api",
   "version": "1.0.1",
   "license": "MIT",
-  "description": "The workflow HTTP API over @xeplr/workflow-engine — the routes the builder and the flows screens talk to. registerWorkflow() mounts it into a host Express app, or it runs on its own.",
+  "description": "The free workflow HTTP API over @xeplr/workflow-engine: mount it in an Express app with registerWorkflow(), or run it on its own, and build your own workflow screens on it.",
+  "keywords": [
+    "workflow",
+    "api",
+    "express",
+    "automation",
+    "triggers"
+  ],
   "main": "index.js",
   "bin": {
     "xeplr-workflow-server": "bin/www"
