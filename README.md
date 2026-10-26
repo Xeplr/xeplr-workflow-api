@@ -284,9 +284,28 @@ between isEmpty isNotEmpty` (the engine's own names, `eq`/`gt`…, are accepted 
 the way in); `in`, `notIn` and `between` take a list. A `target` is a step key,
 `end_success` or `end_failed`.
 
+**Or let a function decide** — the app's own code, registered with
+`@xeplr/actions` under `event: 'decide'`, picked by name:
+
+```json
+{ "when": null, "decide": "routeByAmount", "targets": ["review", "thanks"] }
+```
+
+```js
+register({ name: 'routeByAmount', event: 'decide', description: 'Large requests go to review',
+  execute: (ctx) => (Number(ctx.values.amount) > 1000 ? 'review' : 'thanks') })
+```
+
+`ctx.values` is what the screen just submitted; the answer is the next step's key
+(or `end_success` / `end_failed`). `targets` lists the steps it may choose (none:
+any step) — what the designer draws, and what publishing counts as reachable. An
+answer outside them fails the run, naming the function. The designer lists the
+functions to pick from with `@xeplr/factory`'s `GET /factory/functions`.
+
 **Publishing checks** that every step names a screen, every target exists, a
 step has at most one catch-all and it comes last, every step leads somewhere
-or ends, and every step is reachable from the first.
+or ends, every step is reachable from the first, and every `decide` function is
+registered for `decide` and may only choose steps of this flow.
 
 **The browser never holds a resume key.** Submit is an authenticated call; the
 facade finds the waiting step's key itself and resumes through `resumeByKey`.

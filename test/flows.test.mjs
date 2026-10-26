@@ -585,6 +585,65 @@ console.log('\nwaiting is not the same as waiting for a PERSON')
     /Wait for the reply/.test(refused.body.message))
 }
 
+console.log('\nletting a function decide')
+{
+  // The developer's function, registered for the `decide` event. It reads
+  // what was filled in and names the next step.
+  actions.register({
+    name: 'routeByAmount', event: 'decide', description: 'Large requests go to review',
+    execute: (ctx) => (Number(ctx.values.amount) > 1000 ? 'review' : 'done_screen')
+  })
+  actions.register({ name: 'wanders', event: 'decide', execute: () => 'nowhere' })
+  actions.register({ name: 'notADecider', event: 'beforeSave', execute: () => 'review' })
+
+  const DECIDED = [
+    { stepKey: 'request', screen: 'request_form', transitions: [{ decide: 'routeByAmount', targets: ['review', 'done_screen'] }] },
+    { stepKey: 'review', screen: 'review_form', transitions: [{ when: null, target: 'end_success' }] },
+    { stepKey: 'done_screen', screen: 'thanks_form', transitions: [{ when: null, target: 'end_success' }] }
+  ]
+  await call('POST', '/flows', { key: 'spend', name: 'Spend' })
+  const put = await call('PUT', '/flows/spend', { steps: DECIDED })
+  check('an arrow may name a function instead of a target', put.status === 200)
+  const got = await call('GET', '/flows/spend')
+  check('...and comes back as the function and the steps it may choose',
+    JSON.stringify(got.body.steps[0].transitions) === JSON.stringify([{ when: null, decide: 'routeByAmount', targets: ['review', 'done_screen'] }]))
+  check('both steps it may choose count as reachable — publishing is allowed',
+    (await call('POST', '/flows/spend/publish', {})).status === 200)
+
+  const big = await call('POST', '/flows/spend/runs', {})
+  const toReview = await call('POST', '/flows/runs/' + big.body.runId + '/submit', { values: { amount: 5000 } })
+  check('the function chose review for a large amount', toReview.body.stepKey === 'review' && toReview.body.screen === 'review_form')
+  const small = await call('POST', '/flows/spend/runs', {})
+  const toDone = await call('POST', '/flows/runs/' + small.body.runId + '/submit', { values: { amount: 20 } })
+  check('...and the thanks screen for a small one', toDone.body.stepKey === 'done_screen')
+
+  const bad = (key, decide, targets) => [
+    { stepKey: 'a', screen: 'a_form', transitions: [{ decide, targets }] },
+    { stepKey: 'b', screen: 'b_form', transitions: [{ when: null, target: 'end_success' }] }
+  ]
+  await call('POST', '/flows', { key: 'missing_fn', name: 'Missing' })
+  await call('PUT', '/flows/missing_fn', { steps: bad('missing_fn', 'noSuchFunction', ['b']) })
+  const missing = await call('POST', '/flows/missing_fn/publish', {})
+  check('a function nobody registered is refused at publish, by name',
+    missing.status === 400 && missing.body.details.some((d) => d.message.includes('"noSuchFunction" decide, but no function of that name is registered')))
+  await call('POST', '/flows', { key: 'wrong_event', name: 'Wrong' })
+  await call('PUT', '/flows/wrong_event', { steps: bad('wrong_event', 'notADecider', ['b']) })
+  const wrong = await call('POST', '/flows/wrong_event/publish', {})
+  check('...and so is one written for another event', wrong.status === 400 && JSON.stringify(wrong.body).includes('written for \\"beforeSave\\"'))
+  await call('POST', '/flows', { key: 'bad_target', name: 'Bad' })
+  await call('PUT', '/flows/bad_target', { steps: bad('bad_target', 'routeByAmount', ['b', 'ghost']) })
+  const ghost = await call('POST', '/flows/bad_target/publish', {})
+  check('...and a step it may choose that is not in the flow', ghost.status === 400 && JSON.stringify(ghost.body).includes('may choose \\"ghost\\"'))
+
+  await call('POST', '/flows', { key: 'wander', name: 'Wander' })
+  await call('PUT', '/flows/wander', { steps: bad('wander', 'wanders', []) })
+  check('with no targets listed, any step of the flow is reachable', (await call('POST', '/flows/wander/publish', {})).status === 200)
+  const w = await call('POST', '/flows/wander/runs', {})
+  const lost = await call('POST', '/flows/runs/' + w.body.runId + '/submit', { values: {} })
+  check('an answer that is not a step fails the run, saying what it chose',
+    lost.body.status === 'failed' && JSON.stringify(lost.body).includes('chose \\"nowhere\\"'))
+}
+
 server.close()
 
 const failed = results.filter(([, ok]) => !ok)
