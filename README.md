@@ -203,7 +203,7 @@ Paths are relative to the mount (`/` standalone, `/workflow` in xeplr-bi).
 | POST | `/workspaces/save`, `/workspaces/delete` | yes | " |
 | GET | `/workflows`, `/workflows/:id` | yes | Workflow list/get with `steps` eager-loaded |
 | POST | `/workflows/save` | yes | Save a workflow and its whole step list in one transaction (changeset). A `trigger` that could never fire is refused with 400 `TRIGGER_INVALID` and the reason; an arrow may be written as `when` (`{ field, op, value }`, see the engine README) and a bad one is refused with 400 `CONDITION_INVALID` naming the step and arrow |
-| GET | `/triggers` | yes | The kinds of trigger on offer (`manual`, `api`, `schedule`, `job`, and any a host registers) |
+| GET | `/triggers` | yes | The kinds of trigger on offer (`manual`, `api`, `schedule`, `job`, and any a host registers), each `{ kind, label, description, fields }`: build a trigger form from it, and it never offers a kind the engine refuses |
 | GET | `/workflows/by-trigger?kind=…&<setting>=…` | yes | The workflows a trigger starts, with `steps` — `?kind=job&jobId=<id>` is "what runs after this job". Each other query value matches that trigger setting |
 | GET | `/workflows/:id/trigger` | yes | What its trigger last did: `{ trigger, on, lastFiredAt, lastRunId, lastSkippedAt, lastSkipReason, nextDueAt }` |
 | POST | `/workflows/delete` | yes | `{ ids: [...] }` |

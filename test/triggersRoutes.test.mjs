@@ -50,6 +50,8 @@ try {
 
   const kinds = await call(base + '/triggers')
   check('GET /triggers lists the kinds', kinds.status === 200 && kinds.body.dataArray.map((k) => k.kind).join(',') === 'manual,api,schedule,job', kinds.body)
+  const jobKind = kinds.body.dataArray.find((k) => k.kind === 'job')
+  check('...with the words and the fields a form asks for', jobKind && jobKind.label === 'A job finishes' && jobKind.fields.map((f) => f.name).join() === 'jobId,when', jobKind)
 
   const step = { stepKey: 'decide', name: 'Decide', actionName: 'decide', kind: 'auto', position: 0 }
   const saved = await call(base + '/workflows/save', 'POST', [{
@@ -90,6 +92,17 @@ try {
   check('an arrow written as `when` is saved with its compiled condition', decided.status === 200 && arrows && arrows[0].condition.op === 'eq' && arrows[0].when.op === '=' && arrows[1].condition === null, arrows)
   const badArrow = await call(base + '/workflows/save', 'POST', [{ name: 'Bad arrow', steps: [{ stepKey: 'd', name: 'D', actionName: 'decide', position: 0, transitions: [{ when: { field: 'trigger.status', op: 'like', value: 1 }, target: 'end_success' }] }] }])
   check('...and a bad one is refused with 400, naming the step and arrow', badArrow.status === 400 && /Step "D", arrow 1.*not a comparison/.test(badArrow.body.message), badArrow.body)
+
+  const noList = await call(base + '/workflows/save', 'POST', [{ name: 'Each without a list', steps: [
+    { stepKey: 'fetch', name: 'Fetch', actionName: 'decide', position: 0, transitions: [{ mode: 'each', target: 'one' }] },
+    { stepKey: 'one', name: 'One', actionName: 'decide', position: 1 }
+  ] }])
+  check('an each arrow without its list is refused with 400, saying what it needs', noList.status === 400 && noList.body.code === 'TRANSITION_INVALID' && /Step "Fetch", arrow 1.*`source`/.test(noList.body.message), noList.body)
+  const withList = await call(base + '/workflows/save', 'POST', [{ name: 'Each with a list', steps: [
+    { stepKey: 'fetch', name: 'Fetch', actionName: 'decide', position: 0, transitions: [{ mode: 'each', source: 'output.rows', target: 'one' }] },
+    { stepKey: 'one', name: 'One', actionName: 'decide', position: 1 }
+  ] }])
+  check('...and saved with it', withList.status === 200, withList.body)
 
   const other = await call(base + '/workflows/by-trigger?kind=job', 'GET', null, { 'x-company-id': 'c2' })
   check('another company sees none of them', other.status === 200 && other.body.dataArray.length === 0)
