@@ -268,7 +268,7 @@ Mounted at `<mount>/flows` by `registerWorkflow`, and returned on its own as
 | PUT | `/flows/:key` | create | `{ name?, steps }` → the flow. Drafts only |
 | POST | `/flows/:key/publish` | create | → the flow, once it checks out (below) |
 | POST | `/flows/:key/runs` | run | → `{ runId, status, stepKey, screen }` |
-| GET | `/flows/runs/:runId` | view | → `{ runId, status, stepKey, screen, values, given }` — `values` is what that step already holds, so a resumed run reopens filled in; `given` is what the flow supplies to the screen (below) |
+| GET | `/flows/runs/:runId` | view | → `{ runId, status, stepKey, screen, values, given, previous }` — `values` is what that step already holds, so a resumed run reopens filled in; `given` is what the flow supplies to the screen (below); `previous` is what the screens before it saved (below) |
 | POST | `/flows/runs/:runId/submit` | run | `{ values, recordId? }` → the next `{ status, stepKey, screen }`, or `{ status: 'done' }` |
 | GET | `/flows/:key/runs?mine=1` | view | → runs still going, newest first |
 
@@ -301,6 +301,20 @@ register({ name: 'routeByAmount', event: 'decide', description: 'Large requests 
 any step) — what the designer draws, and what publishing counts as reachable. An
 answer outside them fails the run, naming the function. The designer lists the
 functions to pick from with `@xeplr/factory`'s `GET /factory/functions`.
+
+**What one screen saved is handed to the next** — `previous`, on every run
+view, keyed by SCREEN key (not step key: a binding lives on the screen, and a
+screen is the same form in every flow):
+
+```json
+{ "previous": { "department_edit": { "values": { "id": "dep_42", "name": "Finance", "region": "North" } } } }
+```
+
+`id` is the row that screen saved (`recordId` on submit). A field on a later
+screen fills itself with a default of `{previous.department_edit.values.name}`
+(`@xeplr/ui-factory`). No contract: a screen not reached on this branch is
+absent and a binding to it is empty; a screen shown twice hands over its
+latest. Declared contracts between steps are the paid workflow's.
 
 **Publishing checks** that every step names a screen, every target exists, a
 step has at most one catch-all and it comes last, every step leads somewhere

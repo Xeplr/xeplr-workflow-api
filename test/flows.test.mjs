@@ -644,6 +644,27 @@ console.log('\nletting a function decide')
     lost.body.status === 'failed' && JSON.stringify(lost.body).includes('chose \\"nowhere\\"'))
 }
 
+console.log('\nwhat one screen saved, handed to the next')
+{
+  const HANDOVER = [
+    { stepKey: 'dept', screen: 'department_edit', transitions: [{ when: null, target: 'contact' }] },
+    { stepKey: 'contact', screen: 'department_contact_edit', transitions: [{ when: null, target: 'end_success' }] }
+  ]
+  await call('POST', '/flows', { key: 'handover', name: 'Hand-over' })
+  await call('PUT', '/flows/handover', { steps: HANDOVER })
+  await call('POST', '/flows/handover/publish', {})
+  const started = await call('POST', '/flows/handover/runs', {})
+  check('the first screen has nothing before it', JSON.stringify(started.body.previous) === '{}')
+  const next = await call('POST', '/flows/runs/' + started.body.runId + '/submit', { values: { name: 'Finance', region: 'North' }, recordId: 'dep_42' })
+  const handed = next.body.previous && next.body.previous.department_edit
+  check('the next screen is handed what the one before saved, by that SCREEN\'s key', Boolean(handed))
+  check('...its values, as JSON, with the row it saved as `id`',
+    handed && JSON.stringify(handed.values) === JSON.stringify({ name: 'Finance', region: 'North', id: 'dep_42' }))
+  const reopened = await call('GET', '/flows/runs/' + started.body.runId)
+  check('a reopened run hands over the same', JSON.stringify(reopened.body.previous) === JSON.stringify(next.body.previous))
+  check('...and a screen is never its own previous', !reopened.body.previous.department_contact_edit)
+}
+
 server.close()
 
 const failed = results.filter(([, ok]) => !ok)
