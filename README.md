@@ -382,6 +382,7 @@ Not run by this package. A host points `XEPLR_AUTH_MIGRATIONS` at this folder, a
 | `migrations-auth/0004_flows_access` | The flows routes' `apis` rows (`List flows`, `Start flow run`…) and their role mappings |
 | `migrations-auth/0006_workflow_job_chains_access` | The former `/job-chains` routes' rows, kept: stale rows cost nothing |
 | `migrations-auth/0007_workflow_trigger_access` | The trigger routes' `apis` rows (`List trigger kinds`, `Find workflows by trigger`, `Get workflow trigger`, all `workflows:view`) and their role mappings: Super Admin, CompanyAdmin, Creator and Viewer |
+| `migrations-auth/0008_workflow_run_history_access` | The run-history routes' `apis` rows (`List workflow runs`, `Get workflow run`, `workflows:view`) for Super Admin, CompanyAdmin, Creator and Viewer |
 | `migrations-auth/0005_workflow_license_module` | Every `workflows:*` api row tagged `licenseModule = 'workflow'` (Xeplr Workflow is licensed apart from its host). Nothing filters on it yet |
 
 The package reads this folder from disk (`"xeplr": { "readsFromDisk": ["migrations-auth"] }`), so a build that compiles it must ship the folder beside it.
