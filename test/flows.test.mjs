@@ -4,11 +4,15 @@
 //
 // A SCREEN IS A STEP, AND A FLOW IS A WORKFLOW. This suite drives the flows
 // facade over real HTTP, through the real express router, against the REAL
-// engine — startRun, the wait machinery, resumeByKey, routeAfterStep and
-// @xeplr/expression-handler are all the shipped ones. Only the storage is
-// swapped (test/fakeDb.mjs), because the claim worth checking is not "the
-// facade calls what I said it calls" but "a person filling in two screens
-// lands on the branch the designer drew".
+// engine on a REAL Postgres — startRun, the wait machinery, resumeByKey,
+// routeAfterStep and @xeplr/expression-handler are all the shipped ones,
+// because the claim worth checking is not "the facade calls what I said it
+// calls" but "a person filling in two screens lands on the branch the designer
+// drew". It used to swap the storage for an in-memory stand-in, which drifted
+// from the engine the day the engine began writing tables the stand-in did not
+// have.
+//
+// Needs WORKFLOW_TEST_PG = '{"host":"localhost","port":5432,"user":"…","password":"…"}'.
 //
 // The three things that can be quietly wrong here, and are therefore what most
 // of this is about:
@@ -23,18 +27,26 @@
 import http from 'node:http'
 import express from 'express'
 import { createRequire } from 'node:module'
-import { runWithMt } from '@xeplr/db'
+import { runWithMt, registerApplication } from '@xeplr/db'
 import actions from '@xeplr/actions'
-import { makeFakeDb } from './fakeDb.mjs'
 
 const require = createRequire(import.meta.url)
 
-// BEFORE anything requires it. The engine's lib/flows.js and lib/workflowRunner.js both
-// `require('./db')` at load time, and a class captured from the real one would
-// try to reach a database that is not there.
-const fakeDb = makeFakeDb()
-const dbPath = require.resolve('@xeplr/workflow-engine/lib/db.js')
-require.cache[dbPath] = { id: dbPath, filename: dbPath, loaded: true, exports: fakeDb, children: [], paths: [] }
+const PG = process.env.WORKFLOW_TEST_PG ? JSON.parse(process.env.WORKFLOW_TEST_PG) : null
+if (!PG) {
+  console.log('  skipped — set WORKFLOW_TEST_PG to run against Postgres')
+  process.exit(0)
+}
+
+const engine = require('@xeplr/workflow-engine')
+const WF_DB = 'xeplr_wf_flows_test_' + Date.now()
+registerApplication('xeplr-workflow-test')
+await engine.startEngine({
+  db: { name: WF_DB, connection: PG, connectionName: 'workflow_flows_test', mts: { l1: { name: 'companyId', header: 'x-company-id' } } },
+  schedule: false, recover: false
+})
+const stepRunOf = (runId, stepKey) => runWithMt({ mtId1: 'c1' }, () =>
+  engine.db.model('WorkflowStepRun').query().where({ runId, stepKey }).first())
 
 const flows = require('@xeplr/workflow-engine/lib/flows.js')
 const workflowRunner = require('@xeplr/workflow-engine/lib/workflowRunner.js')
@@ -304,7 +316,7 @@ let branchRunId = null
 
   // The app wrote the record into its own table; the run keeps the handle so a
   // later step or condition can point at it.
-  const personRun = fakeDb.store.WorkflowStepRun.find((sr) => sr.runId === branchRunId && sr.stepKey === 'person')
+  const personRun = await stepRunOf(branchRunId, 'person')
   check('recordId is kept on the step’s output', personRun.output.recordId === 'rec_7')
   check('...beside the submitted values, which are the output',
     personRun.output.type === 'contractor' && personRun.output.name === 'Ada')
@@ -430,10 +442,10 @@ console.log('\na screen in an ordinary workflow')
   // Seeded directly: /flows/:key/runs starts FLOWS, and the point here is a
   // workflow that is not one.
   await runWithMt({ mtId1: 'c1' }, async () => {
-    await fakeDb.model('Workflow').query().insert({
+    await engine.db.model('Workflow').query().insert({
       id: 'wf_mixed', name: 'Mixed', kind: 'workflow', status: 'published'
     })
-    await fakeDb.model('WorkflowStep').query().insert({
+    await engine.db.model('WorkflowStep').query().insert({
       id: 'st_ask', workflowId: 'wf_mixed', stepKey: 'ask', name: 'Ask the manager',
       actionName: 'screen-show', kind: 'wait', onError: 'stop',
       values: { screen: 'approval_form' }, position: 0, transitions: null
@@ -450,7 +462,7 @@ console.log('\na screen in an ordinary workflow')
   check('submitting it works — the trap is closed', done.status === 200)
   check('...and the run moves on', done.body.status === 'Completed' || done.body.status !== 'waiting')
 
-  const stepRun = fakeDb.store.WorkflowStepRun.find((sr) => sr.runId === run.id && sr.stepKey === 'ask')
+  const stepRun = await stepRunOf(run.id, 'ask')
   check('...with what the person typed as the step output', stepRun && stepRun.output && stepRun.output.approved === true)
 }
 
@@ -461,10 +473,10 @@ console.log('\na flow the designer drew, run by the same page')
   // the key its app gave it. The page that starts and resumes one must not
   // care which it is looking at.
   await runWithMt({ mtId1: 'c1' }, async () => {
-    await fakeDb.model('Workflow').query().insert({
+    await engine.db.model('Workflow').query().insert({
       id: 'wf_drawn', key: 'drawn', name: 'Drawn here', kind: 'workflow', status: 'draft'
     })
-    await fakeDb.model('WorkflowStep').query().insert({
+    await engine.db.model('WorkflowStep').query().insert({
       id: 'st_form', workflowId: 'wf_drawn', stepKey: 'form', name: 'Fill it in',
       actionName: 'screen-show', kind: 'wait', onError: 'stop',
       values: { screen: 'intake_form' }, position: 0, transitions: null
@@ -508,16 +520,16 @@ console.log('\nwhat the flow already knows, handed to the screen')
   // engine resolves it like any other, and the facade hands it over with the
   // screen.
   await runWithMt({ mtId1: 'c1' }, async () => {
-    await fakeDb.model('Workflow').query().insert({
+    await engine.db.model('Workflow').query().insert({
       id: 'wf_8d', key: 'eight_d', name: 'Complaint', kind: 'workflow', status: 'published'
     })
-    await fakeDb.model('WorkflowStep').query().insert({
+    await engine.db.model('WorkflowStep').query().insert({
       id: 'st_d1', workflowId: 'wf_8d', stepKey: 'd1', name: 'Raise the complaint',
       actionName: 'screen-show', kind: 'wait', onError: 'stop',
       values: { screen: 'complaint_edit' }, position: 0,
       transitions: [{ target: 'd3' }]
     })
-    await fakeDb.model('WorkflowStep').query().insert({
+    await engine.db.model('WorkflowStep').query().insert({
       id: 'st_d3', workflowId: 'wf_8d', stepKey: 'd3', name: 'Contain it',
       actionName: 'screen-show', kind: 'wait', onError: 'stop',
       values: { screen: 'containment_edit', values: { complaintId: '{steps.d1.output.recordId}' } },
@@ -563,10 +575,10 @@ console.log('\nwaiting is not the same as waiting for a PERSON')
   })
 
   await runWithMt({ mtId1: 'c1' }, async () => {
-    await fakeDb.model('Workflow').query().insert({
+    await engine.db.model('Workflow').query().insert({
       id: 'wf_wait', name: 'Waits', kind: 'workflow', status: 'published'
     })
-    await fakeDb.model('WorkflowStep').query().insert({
+    await engine.db.model('WorkflowStep').query().insert({
       id: 'st_mail', workflowId: 'wf_wait', stepKey: 'mail', name: 'Wait for the reply',
       actionName: 'await-reply', kind: 'wait', onError: 'stop',
       values: {}, position: 0, transitions: null
@@ -666,6 +678,10 @@ console.log('\nwhat one screen saved, handed to the next')
 }
 
 server.close()
+await engine.db.conn().destroy().catch(() => {})
+const admin = require('knex')({ client: 'pg', connection: { ...PG, database: 'postgres' } })
+await admin.raw(`DROP DATABASE IF EXISTS "${WF_DB}" WITH (FORCE)`).catch(() => {})
+await admin.destroy()
 
 const failed = results.filter(([, ok]) => !ok)
 console.log(`\n${results.length - failed.length}/${results.length} passed`)
