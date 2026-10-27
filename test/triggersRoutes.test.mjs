@@ -44,6 +44,8 @@ try {
   const app = express()
   app.use(express.json())
   app.use(mtMiddleware())
+  // Who is signed in, as the auth gate would set it: roles by name.
+  app.use((req, res, next) => { if (req.headers['x-test-roles']) req.user = { id: 'u-' + req.headers['x-test-roles'], roles: String(req.headers['x-test-roles']).split(',') }; next() })
   app.use('/workflow', buildWorkflowRouter({}))
   const server = await new Promise((resolve) => { const s = app.listen(0, () => resolve(s)) })
   const base = `http://127.0.0.1:${server.address().port}/workflow`
@@ -120,6 +122,23 @@ try {
   check('...a run not there is 404', (await call(base + '/runs/nope')).status === 404)
   check('...and another company sees none of it', (await call(base + '/runs/' + runId, 'GET', null, { 'x-company-id': 'c2' })).status === 404 &&
     (await call(base + '/workflows/' + hid + '/runs', 'GET', null, { 'x-company-id': 'c2' })).body.dataArray.length === 0)
+
+  // Screens inside a workflow: waiting for a role, answered with a button.
+  const rev = await call(base + '/workflows/save', 'POST', [{ name: 'Review', status: 'published', steps: [
+    { stepKey: 'review', name: 'Review', actionName: 'screen-show', kind: 'wait', position: 0,
+      values: { screen: 'unmatched_review', assignTo: 'Accounts', buttons: ['approve', 'send_back'] },
+      transitions: [{ when: { field: 'output.action', op: '=', value: 'approve' }, target: 'end_success' }, { when: null, target: 'end_failed' }] }
+  ] }])
+  const rr = await call(base + '/workflows/' + rev.body.updatedIds[0] + '/run', 'POST', {})
+  const rrId = rr.body.dataArray[0].id
+  const forAccounts = await call(base + '/flows/waiting', 'GET', null, { 'x-test-roles': 'Accounts' })
+  check('GET /flows/waiting lists the screen for its role', forAccounts.status === 200 && forAccounts.body.length === 1 && forAccounts.body[0].runId === rrId && forAccounts.body[0].buttons.length === 2, forAccounts.body)
+  const forSales = await call(base + '/flows/waiting', 'GET', null, { 'x-test-roles': 'Sales' })
+  check('...and not for another role', forSales.status === 200 && forSales.body.length === 0, forSales)
+  const salesTry = await call(base + '/flows/runs/' + rrId + '/submit', 'POST', { values: {}, action: 'approve' }, { 'x-test-roles': 'Sales' })
+  check('submitting it as another role is refused, 403', salesTry.status === 403 && salesTry.body.code === 'NOT_YOURS', salesTry.body)
+  const approved = await call(base + '/flows/runs/' + rrId + '/submit', 'POST', { values: {}, action: 'approve' }, { 'x-test-roles': 'Accounts' })
+  check('...and as Accounts, Approve finishes it', approved.status === 200 && approved.body.status !== 'waiting', approved.body)
 
   const other = await call(base + '/workflows/by-trigger?kind=job', 'GET', null, { 'x-company-id': 'c2' })
   check('another company sees none of them', other.status === 200 && other.body.dataArray.length === 0)

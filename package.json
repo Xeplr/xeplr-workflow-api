@@ -38,7 +38,7 @@
     "url": "https://github.com/Xeplr/xeplr-workflow-api.git"
   },
   "dependencies": {
-    "@xeplr/workflow-engine": "^3.2.6",
+    "@xeplr/workflow-engine": "^3.2.8",
     "dotenv": "^17.4.2"
   },
   "peerDependencies": {

@@ -270,8 +270,9 @@ Mounted at `<mount>/flows` by `registerWorkflow`, and returned on its own as
 | PUT | `/flows/:key` | create | `{ name?, steps }` → the flow. Drafts only |
 | POST | `/flows/:key/publish` | create | → the flow, once it checks out (below) |
 | POST | `/flows/:key/runs` | run | → `{ runId, status, stepKey, screen }` |
-| GET | `/flows/runs/:runId` | view | → `{ runId, status, stepKey, screen, values, given, previous }` — `values` is what that step already holds, so a resumed run reopens filled in; `given` is what the flow supplies to the screen (below); `previous` is what the screens before it saved (below) |
-| POST | `/flows/runs/:runId/submit` | run | `{ values, recordId? }` → the next `{ status, stepKey, screen }`, or `{ status: 'done' }` |
+| GET | `/flows/waiting` | view | Every screen waiting, in any workflow of this company, for one of the caller's roles (a screen step's `assignTo`; empty is anyone; a Super Admin sees all), oldest first: `[{ runId, workflowId, workflowName, stepKey, stepName, screen, assignTo, buttons, period, waitingSince }]`. The "waiting for you" list |
+| GET | `/flows/runs/:runId` | view | → `{ runId, status, stepKey, screen, values, given, previous, assignTo, buttons }` — `values` is what that step already holds, so a resumed run reopens filled in; `given` is what the flow supplies to the screen (below); `previous` is what the screens before it saved (below) |
+| POST | `/flows/runs/:runId/submit` | run | `{ values, recordId?, action? }` → the next `{ status, stepKey, screen }`, or `{ status: 'done' }`. A screen assigned to a role is refused to anyone without it (403 `NOT_YOURS`); one with `buttons` needs `action`, one of them, which becomes the step's `output.action` |
 | GET | `/flows/:key/runs?mine=1` | view | → runs still going, newest first |
 
 **A transition is structured, never a formula**, in and out:
@@ -383,6 +384,7 @@ Not run by this package. A host points `XEPLR_AUTH_MIGRATIONS` at this folder, a
 | `migrations-auth/0006_workflow_job_chains_access` | The former `/job-chains` routes' rows, kept: stale rows cost nothing |
 | `migrations-auth/0007_workflow_trigger_access` | The trigger routes' `apis` rows (`List trigger kinds`, `Find workflows by trigger`, `Get workflow trigger`, all `workflows:view`) and their role mappings: Super Admin, CompanyAdmin, Creator and Viewer |
 | `migrations-auth/0008_workflow_run_history_access` | The run-history routes' `apis` rows (`List workflow runs`, `Get workflow run`, `workflows:view`) for Super Admin, CompanyAdmin, Creator and Viewer |
+| `migrations-auth/0009_screens_waiting_access` | `List screens waiting` (`workflows:view`) for Super Admin, CompanyAdmin, Creator and Viewer; `Submit flow screen` for Viewer too, since a screen's own role (`assignTo`) is the real gate |
 | `migrations-auth/0005_workflow_license_module` | Every `workflows:*` api row tagged `licenseModule = 'workflow'` (Xeplr Workflow is licensed apart from its host). Nothing filters on it yet |
 
 The package reads this folder from disk (`"xeplr": { "readsFromDisk": ["migrations-auth"] }`), so a build that compiles it must ship the folder beside it.

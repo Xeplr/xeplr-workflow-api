@@ -18,7 +18,7 @@ async function serve(access, withAccess) {
 }
 
 const { API_NAMES } = buildFlowsRouter
-check('every route has a permission name', Object.keys(API_NAMES).length === 9)
+check('every route has a permission name', Object.keys(API_NAMES).length === 10 && API_NAMES.listWaiting === 'List screens waiting')
 
 console.log('\naccess: true')
 {
