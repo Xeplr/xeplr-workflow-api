@@ -417,11 +417,11 @@ The package reads this folder from disk (`"xeplr": { "readsFromDisk": ["migratio
 npm test          # node test/run.mjs — each *.test.mjs in its own process
 ```
 
-Plain scripts, no framework; each prints `ok`/`FAIL` lines and exits non-zero on failure. A suite that needs node flags declares them in a `// @flags:` header. `triggersRoutes.test.mjs` needs a real Postgres (`WORKFLOW_TEST_PG`) and is skipped without it; CI and the release start one, so neither ships on a skipped suite.
+Plain scripts, no framework; each prints `ok`/`FAIL` lines and exits non-zero on failure. A suite that needs node flags declares them in a `// @flags:` header. `flows.test.mjs` and `triggersRoutes.test.mjs` need a real Postgres (`WORKFLOW_TEST_PG`) and are skipped without it; CI and the release start one, so neither ships on a skipped suite.
 
 | Suite | Covers |
 |---|---|
-| `flows.test.mjs` | The `/flows` routes over the real engine: flows as workflows, steps and arrows, runs and submits (storage swapped for an in-memory store) |
+| `flows.test.mjs` | On a real Postgres: the `/flows` routes over the real engine — flows as workflows, steps and arrows, runs and submits |
 | `triggersRoutes.test.mjs` | Triggers over HTTP on the real engine and Postgres (`WORKFLOW_TEST_PG`, skipped without it):
 - a job trigger saved as part of an ordinary workflow
 - a bad cron and an unknown kind refused with the reason
