@@ -1,6 +1,6 @@
 {
   "name": "@xeplr/workflow-api",
-  "version": "1.2.3",
+  "version": "1.3.0",
   "license": "MIT",
   "description": "The free workflow HTTP API over @xeplr/workflow-engine: mount it in an Express app with registerWorkflow(), or run it on its own, and build your own workflow screens on it.",
   "keywords": [
