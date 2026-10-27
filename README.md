@@ -164,6 +164,7 @@ api/
 ├─ lib/
 │  ├─ router.js             buildWorkflowRouter(config) — all HTTP routes
 │  ├─ flowsRouter.js        the /flows routes
+│  ├─ tasksRouter.js        the /tasks routes: the inbox, claim, answer, reassign
 ├─ migrations-auth/         rows for the AUTH database (roles, menus, apis)
 └─ test/                    run.mjs + *.test.mjs
 ```
@@ -204,7 +205,9 @@ Paths are relative to the mount (`/` standalone, `/workflow` in xeplr-bi).
 | GET | `/workflows`, `/workflows/:id` | yes | Workflow list/get with `steps` eager-loaded |
 | POST | `/workflows/save` | yes | Save a workflow and its whole step list in one transaction (changeset). A `trigger` that could never fire is refused with 400 `TRIGGER_INVALID` and the reason; an arrow may be written as `when` (`{ field, op, value }`, see the engine README) and a bad one is refused with 400 `CONDITION_INVALID` naming the step and arrow |
 | GET | `/workflows/:id/runs` | yes | A workflow's runs, newest first (`?limit=`, default 50, at most 200): status, what started it, its inputs and period, when, how long, and why it failed |
-| GET | `/runs/:runId` | yes | One run with every step it took, in order: `{ stepKey, actionName, status, input, output, error, durationMs, at }`, the items an "each" arrow fanned out into (`children`), and its `parent`. Inputs hold no secret: a saved connection is recorded by its id |
+| GET | `/runs/:runId` | yes | One run with every step it took, in order: `{ stepKey, actionName, status, input, output, error, durationMs, pathId, actorUserId, at }` (`actorUserId`: who answered a waiting step), the items an "each" arrow fanned out into (`children`), its `parent`, where the case is (`paths`: each path's step and state) and who it waits on or was answered by (`tasks`). Inputs hold no secret: a saved connection is recorded by its id |
+| POST | `/runs/:runId/cancel` | yes (`workflows:admin`) | `{ reason }` → stops a case still going; it fails as `CANCELLED` with who and why, and its tasks and links stop working. 400 `REASON_REQUIRED`, 409 `RUN_FINISHED` |
+| POST | `/runs/:runId/retry` | yes (`workflows:admin`) | `{ reason }` → runs again the step a crash interrupted, once someone has checked it did not already do its work. 409 `NOT_INTERRUPTED` for any other case, `SEVERAL_PATHS` for one that was on several |
 | GET | `/triggers` | yes | The kinds of trigger on offer (`manual`, `api`, `schedule`, `job`, and any a host registers), each `{ kind, label, description, fields }`: build a trigger form from it, and it never offers a kind the engine refuses |
 | GET | `/workflows/by-trigger?kind=…&<setting>=…` | yes | The workflows a trigger starts, with `steps` — `?kind=job&jobId=<id>` is "what runs after this job". Each other query value matches that trigger setting |
 | GET | `/workflows/:id/trigger` | yes | What its trigger last did: `{ trigger, on, lastFiredAt, lastRunId, lastSkippedAt, lastSkipReason, nextDueAt }` |
@@ -229,6 +232,23 @@ POST /workflows/save
 ```
 
 There are no job-chain routes any more. A job's "After this job" is an ordinary workflow with a job trigger: the jobs screen reads the workflows a job starts from `/workflows/by-trigger?kind=job&jobId=…` and saves them through `/workflows/save`.
+
+### Tasks — the inbox (`lib/tasksRouter.js`, over the engine's `lib/tasks.js`)
+
+What people answer: a screen, or an approval (one task per approver). The
+same envelope and per-route gate as `/flows` (`access: true` checks each
+route's permission). Who may act is the engine's decision, from `req.user`
+(`{ id, roles }`): a task for a user is theirs, for a role anyone's holding it,
+for neither anyone's in the company; a Super Admin any. Errors are
+`{ message, code }` with the status the engine chose.
+
+| Method | Path | Right | Body → answer |
+|---|---|---|---|
+| GET | `/tasks/mine?limit=&offset=` | view | → `{ total, tasks: [{ id, runId, workflowName, stepKey, title, kind, status, assigneeUserId, assigneeRole, claimedBy, mine, dueAt, since, screen, buttons, given }] }`, due first, then oldest; `limit` ≤ 200. An approval's buttons are always `approved` / `rejected` |
+| POST | `/tasks/:id/claim` | run | → the task, taken; nobody else answers it. 409 `TASK_CLAIMED` |
+| POST | `/tasks/:id/release` | run | → the task, back for everyone it is for |
+| POST | `/tasks/:id/answer` | run | An approval: `{ decision: 'approved' \| 'rejected', comment }` (a reject needs a reason: 400 `REASON_REQUIRED`). A screen: `{ values, action, recordId }`, as `/flows/runs/:runId/submit`. Refused: 403 `NOT_YOURS`, `NOT_SAME_PERSON` (the requester, or someone at a `notSame` step); 409 `TASK_CLAIMED`, `TASK_CLOSED` (withdrawn), `ALREADY_ANSWERED` |
+| POST | `/tasks/:id/reassign` | admin | `{ userId \| role, reason }` → the task, moved, the move in its `history` |
 
 ### Flows — screens as steps (`lib/flowsRouter.js`, over the engine's `lib/flows.js`)
 
@@ -385,6 +405,7 @@ Not run by this package. A host points `XEPLR_AUTH_MIGRATIONS` at this folder, a
 | `migrations-auth/0007_workflow_trigger_access` | The trigger routes' `apis` rows (`List trigger kinds`, `Find workflows by trigger`, `Get workflow trigger`, all `workflows:view`) and their role mappings: Super Admin, CompanyAdmin, Creator and Viewer |
 | `migrations-auth/0008_workflow_run_history_access` | The run-history routes' `apis` rows (`List workflow runs`, `Get workflow run`, `workflows:view`) for Super Admin, CompanyAdmin, Creator and Viewer |
 | `migrations-auth/0009_screens_waiting_access` | `List screens waiting` (`workflows:view`) for Super Admin, CompanyAdmin, Creator and Viewer; `Submit flow screen` for Viewer too, since a screen's own role (`assignTo`) is the real gate |
+| `migrations-auth/0010_tasks_and_admin_access` | The inbox (`List my tasks`, `workflows:view`) and `Take task`, `Put task back`, `Answer task` (`workflows:run`) for every role, Viewer too — the task's own user or role is the real gate. A new group **`workflows:admin`** — `Reassign task`, `Cancel run`, `Retry run` — for Super Admin and CompanyAdmin only: they are decisions about other people's work |
 | `migrations-auth/0005_workflow_license_module` | Every `workflows:*` api row tagged `licenseModule = 'workflow'` (Xeplr Workflow is licensed apart from its host). Nothing filters on it yet |
 
 The package reads this folder from disk (`"xeplr": { "readsFromDisk": ["migrations-auth"] }`), so a build that compiles it must ship the folder beside it.
@@ -417,7 +438,7 @@ The package reads this folder from disk (`"xeplr": { "readsFromDisk": ["migratio
 npm test          # node test/run.mjs — each *.test.mjs in its own process
 ```
 
-Plain scripts, no framework; each prints `ok`/`FAIL` lines and exits non-zero on failure. A suite that needs node flags declares them in a `// @flags:` header. `flows.test.mjs` and `triggersRoutes.test.mjs` need a real Postgres (`WORKFLOW_TEST_PG`) and are skipped without it; CI and the release start one, so neither ships on a skipped suite.
+Plain scripts, no framework; each prints `ok`/`FAIL` lines and exits non-zero on failure. A suite that needs node flags declares them in a `// @flags:` header. `flows.test.mjs`, `triggersRoutes.test.mjs`, `tasksRoutes.test.mjs` and `authMigrations.test.mjs` need a real Postgres (`WORKFLOW_TEST_PG`) and are skipped without it; CI and the release start one, so neither ships on a skipped suite.
 
 | Suite | Covers |
 |---|---|
@@ -431,7 +452,9 @@ Plain scripts, no framework; each prints `ok`/`FAIL` lines and exits non-zero on
 - `/workflows/:id/trigger`
 - switching a trigger off
 - another company seeing none of it |
+| `tasksRoutes.test.mjs` | On a real Postgres, over HTTP: an approval saved and started; each person's `/tasks/mine` (not the requester's, not another company's); claim and the refusal to another; a reject needing a reason; a task for another role refused; the run showing who answered, the deciding step's actor and its paths; reassign and cancel needing reasons; retry refused for a case not interrupted; another company unable to cancel; the per-route permission check |
+| `authMigrations.test.mjs` | `@xeplr/auth`'s migrations then `migrations-auth/` applied to a scratch Postgres, as the auth server applies them: every workflow route row reaches a role besides Super Admin; the inbox for every role; the admin actions for the admins only, in `workflows:admin`; running every file again adds nothing |
 | `requires.test.mjs` | Every relative `require` in this package points at a file (Node only notices a missing one when the line runs) |
 | `flowsAccess.test.mjs` | With `access: true`, each flows route refuses a caller lacking its permission, and refuses outright with no `req.access`; off by default |
 
-Not covered by tests: the workflow router, `startRun`/`resumeByKey` against a database, migrations, `job-run`.
+Not covered by tests: the workflow builder's own save/run routes beyond what the suites above drive, `job-run`.
