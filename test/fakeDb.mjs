@@ -79,6 +79,9 @@ export function makeFakeDb() {
       insert(row) { op = 'insert'; payload = row; return builder },
       patch(row) { op = 'patch'; payload = row; return builder },
       delete() { op = 'delete'; return builder },
+      // How many rows match, as Objection's resultSize() answers: the
+      // engine's loop guard counts a step's runs with it.
+      resultSize() { return settle().then(() => visible().length) },
 
       // A REAL promise, not a bare thenable: Objection's builder is one, so
       // code written against it chains .then().catch() and a thenable that
