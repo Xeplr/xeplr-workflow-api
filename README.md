@@ -203,6 +203,8 @@ Paths are relative to the mount (`/` standalone, `/workflow` in xeplr-bi).
 | POST | `/workspaces/save`, `/workspaces/delete` | yes | " |
 | GET | `/workflows`, `/workflows/:id` | yes | Workflow list/get with `steps` eager-loaded |
 | POST | `/workflows/save` | yes | Save a workflow and its whole step list in one transaction (changeset). A `trigger` that could never fire is refused with 400 `TRIGGER_INVALID` and the reason; an arrow may be written as `when` (`{ field, op, value }`, see the engine README) and a bad one is refused with 400 `CONDITION_INVALID` naming the step and arrow |
+| GET | `/workflows/:id/runs` | yes | A workflow's runs, newest first (`?limit=`, default 50, at most 200): status, what started it, its inputs and period, when, how long, and why it failed |
+| GET | `/runs/:runId` | yes | One run with every step it took, in order: `{ stepKey, actionName, status, input, output, error, durationMs, at }`, the items an "each" arrow fanned out into (`children`), and its `parent`. Inputs hold no secret: a saved connection is recorded by its id |
 | GET | `/triggers` | yes | The kinds of trigger on offer (`manual`, `api`, `schedule`, `job`, and any a host registers), each `{ kind, label, description, fields }`: build a trigger form from it, and it never offers a kind the engine refuses |
 | GET | `/workflows/by-trigger?kind=…&<setting>=…` | yes | The workflows a trigger starts, with `steps` — `?kind=job&jobId=<id>` is "what runs after this job". Each other query value matches that trigger setting |
 | GET | `/workflows/:id/trigger` | yes | What its trigger last did: `{ trigger, on, lastFiredAt, lastRunId, lastSkippedAt, lastSkipReason, nextDueAt }` |

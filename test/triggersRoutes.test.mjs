@@ -104,6 +104,23 @@ try {
   ] }])
   check('...and saved with it', withList.status === 200, withList.body)
 
+  // Run history: a workflow's runs, and one run with every step it took.
+  const hist = await call(base + '/workflows/save', 'POST', [{ name: 'History', status: 'published', steps: [
+    { stepKey: 'a', name: 'A', actionName: 'decide', position: 0, transitions: [{ mode: 'single', target: 'b' }] },
+    { stepKey: 'b', name: 'B', actionName: 'recall', position: 1, values: { key: 'k' }, transitions: [{ mode: 'single', target: 'end_success' }] }
+  ] }])
+  const hid = hist.body.updatedIds[0]
+  const started = await call(base + '/workflows/' + hid + '/run', 'POST', {})
+  const runId = started.body.dataArray[0].id
+  const runs = await call(base + '/workflows/' + hid + '/runs')
+  check('GET /workflows/:id/runs lists its runs, newest first', runs.status === 200 && runs.body.dataArray.length === 1 && runs.body.dataArray[0].id === runId && runs.body.dataArray[0].status === 'success', runs.body)
+  const one = await call(base + '/runs/' + runId)
+  const st = one.body.dataArray && one.body.dataArray[0].steps
+  check('GET /runs/:runId gives every step it took, in order, with what came out', one.status === 200 && st.map((x) => x.stepKey).join() === 'a,b' && st[1].output.found === false && st[1].input.key === 'k' && st[0].at, one.body)
+  check('...a run not there is 404', (await call(base + '/runs/nope')).status === 404)
+  check('...and another company sees none of it', (await call(base + '/runs/' + runId, 'GET', null, { 'x-company-id': 'c2' })).status === 404 &&
+    (await call(base + '/workflows/' + hid + '/runs', 'GET', null, { 'x-company-id': 'c2' })).body.dataArray.length === 0)
+
   const other = await call(base + '/workflows/by-trigger?kind=job', 'GET', null, { 'x-company-id': 'c2' })
   check('another company sees none of them', other.status === 200 && other.body.dataArray.length === 0)
   server.close()
