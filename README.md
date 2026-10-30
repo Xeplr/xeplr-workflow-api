@@ -122,7 +122,7 @@ git-ignored (`.gitignore`) because it carries secrets. Never commit it.
 
 | Variable | Meaning | Comes from |
 |---|---|---|
-| `AUTH_URL` | Auth server the createApp gate validates tokens against | `@xeplr/base-apis` `gateRequiredEnv` |
+| `AUTH_URL` | Auth server the createApp gate validates tokens against — and, with `@xeplr/base-apis` 3, asks whether the caller belongs to the company and workspace a request names (needs `@xeplr/auth` 1.4 or later) | `@xeplr/base-apis` `gateRequiredEnv` (peer `^2.0.6 \|\| ^3.0.0`) |
 | `ENCRYPTION_KEY`, `AUTH_JWT_SECRET`, `AUTH_PORT`, `AUTH_DB_NAME`, `XEPLR_AUTH_MIGRATIONS` | Decrypts stored connection strings; auth DB and token settings | `@xeplr/auth` `requiredEnv` (the inline comment in `env.required.js` lists older names) |
 | `EMAIL_PROVIDER`, `BREVO_*` | Outbound mail provider | `@xeplr/email` `requiredEnv` |
 | `EMAIL_DB_NAME` | This app's own email template store | `@xeplr/email` `templatesRequiredEnv` |
