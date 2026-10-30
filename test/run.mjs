@@ -20,6 +20,14 @@ const files = readdirSync(dir)
   .sort()
 
 let failed = 0
+// A DATA ROOT for every suite, as a host has at boot: @xeplr/actions keeps
+// each tenant's files under XEPLR_DATA_DIR. A scratch folder unless set.
+if (!process.env.XEPLR_DATA_DIR) {
+  const { mkdtempSync, realpathSync } = await import('node:fs')
+  const { tmpdir } = await import('node:os')
+  process.env.XEPLR_DATA_DIR = realpathSync(mkdtempSync(path.join(tmpdir(), 'xeplr-wfapi-data-')))
+}
+
 for (const file of files) {
   const full = path.join(dir, file)
   const header = readFileSync(full, 'utf8').slice(0, 400)

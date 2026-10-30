@@ -25,6 +25,7 @@ module.exports = [
   // xeplr_email that another product could overwrite by template name.
   ...require('@xeplr/email').templatesRequiredEnv, // EMAIL_DB_NAME
   ...require('@xeplr/actions').configRequiredEnv,  // XCFG_DB_NAME, XCFG_DB_CONNECTION_INFO_ENCRYPTED
+  ...require('@xeplr/actions').requiredEnv,        // XEPLR_DATA_DIR — each tenant's step files under it
 
   // App-specific — names this app chose (checked by the API process):
   //

@@ -126,6 +126,7 @@ git-ignored (`.gitignore`) because it carries secrets. Never commit it.
 | `ENCRYPTION_KEY`, `AUTH_JWT_SECRET`, `AUTH_PORT`, `AUTH_DB_NAME`, `XEPLR_AUTH_MIGRATIONS` | Decrypts stored connection strings; auth DB and token settings | `@xeplr/auth` `requiredEnv` (the inline comment in `env.required.js` lists older names) |
 | `EMAIL_PROVIDER`, `BREVO_*` | Outbound mail provider | `@xeplr/email` `requiredEnv` |
 | `EMAIL_DB_NAME` | This app's own email template store | `@xeplr/email` `templatesRequiredEnv` |
+| `XEPLR_DATA_DIR` | The root of all data, absolute and existing. A step's files are in the run's tenant folder under it, `<root>/<app>/<company>/<workspace>/`; temporary ones in its `tmp/` | `@xeplr/actions` `requiredEnv` |
 | `XCFG_DB_NAME`, `XCFG_DB_CONNECTION_INFO_ENCRYPTED` | Shared `xeplr_configs` control-plane DB | `@xeplr/actions` `configRequiredEnv` |
 | `DB_API` | This package's database name | app |
 | `WORKFLOW_PORT` | API port | app |
