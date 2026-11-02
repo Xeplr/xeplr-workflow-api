@@ -215,6 +215,7 @@ Paths are relative to the mount (`/` standalone, `/workflow` in xeplr-bi).
 | POST | `/workflows/delete` | yes | `{ ids: [...] }` |
 | POST | `/workflows/:id/run` | yes | `startRun(id, body)`. Runs synchronously to the first wait step or the end; 400 carries `{ message, code, details }` |
 | GET | `/workflows/:id/steps/:stepKey/last-output` | yes | Output of the latest `success`/`waiting` step run for that key. No side effects |
+| POST | `/workflows/:id/steps/preview` | yes | **What the step would hand on, read, never run** (`@xeplr/actions` `previewAction`): `{ actionName, stepKey, values, params }`, interpolated as for try → `{ status, output, rows, error, input }`. `success`: the output and its first rows (up to 5); `example`: the action writes or sends, here is its example output, nothing ran; `failed`: says what is missing. Group `workflows:create` (Super Admin, CompanyAdmin, Creator; `migrations-auth/0011`). No confirmation needed: there is nothing to confirm |
 | POST | `/workflows/:id/steps/try` | yes | **Runs the action for real** with `{ actionName, stepKey, values, params }`, interpolated against other steps' `sampleOutput`. Echoes the resolved `input` |
 | POST | `/public/resume/:key` | **no** | Resume a wait step; body `{ output?, status?, error? }`. The host must also exempt `<mount>/public/*` from its own auth |
 | GET | `/email-templates`, `/email-templates/:name` | yes | From `@xeplr/email` `templatesRouter`; mounted only if templates are initialised |
@@ -427,6 +428,7 @@ The package reads this folder from disk (`"xeplr": { "readsFromDisk": ["migratio
 | An application id must be registered | Rows written to shared `xeplr_configs` are attributed by application |
 | Hosts must not mount the router at `/` | It serves `/companies`, `/workspaces`, `/actions`, which a host already serves |
 | Hosts should take the router, not `app.use()` it onto a built createApp app | createApp adds a catch-all 404 after its routes, so later mounts are unreachable |
+| `/steps/preview` only ever calls an action's `preview`, never `execute` | A designer fills a step's output the moment its inputs are complete, with no confirmation. That is safe only if nothing a preview calls can write, send, move or delete; an action without a preview answers with its example |
 | `/steps/try` is real execution; the UI confirms first | Same `runAction` the engine uses — `email-delete` expunges, `db-push` writes |
 | `/public/resume/:key` is ungated | A resume link is followed from an email client or a job callback with no token |
 | `resumeByKey` refuses (`RESUME_KEY_NOT_READY`) until the step is `waiting`; claim is an atomic conditional patch | The key exists before the action finishes (mail scanners pre-fetch links); resuming mid-action would route the run on while the action is still running |

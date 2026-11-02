@@ -60,6 +60,8 @@ try {
   check('the admin actions reach Super Admin and the company admin only',
     ['Reassign task', 'Cancel run', 'Retry run'].every((a) => has(a, 'Super Admin') && has(a, 'CompanyAdmin') && !has(a, 'Creator') && !has(a, 'Viewer')),
     ['Reassign task', 'Cancel run', 'Retry run'].map((a) => byName[a]))
+  check('the step preview reaches those who design workflows, not a Viewer',
+    ['Super Admin', 'CompanyAdmin', 'Creator'].every((r) => has('Preview workflow step', r)) && !has('Preview workflow step', 'Viewer'), byName['Preview workflow step'])
   check('...in their own group, workflows:admin', ['Reassign task', 'Cancel run', 'Retry run'].every((a) => byName[a].apiGroup === 'workflows:admin'))
 
   const count = async () => (await client.query('SELECT (SELECT count(*) FROM apis) + (SELECT count(*) FROM "apisRolesMapping") AS n')).rows[0].n
