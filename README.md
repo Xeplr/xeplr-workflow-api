@@ -206,8 +206,8 @@ Paths are relative to the mount (`/` standalone, `/workflow` in xeplr-bi).
 | GET | `/workflows`, `/workflows/:id` | yes | Workflow list/get with `steps` eager-loaded |
 | POST | `/workflows/save` | yes | Save a workflow and its whole step list in one transaction (changeset). A `trigger` that could never fire is refused with 400 `TRIGGER_INVALID` and the reason; an arrow may be written as `when` (`{ field, op, value }`, see the engine README) and a bad one is refused with 400 `CONDITION_INVALID` naming the step and arrow |
 | GET | `/workflows/:id/runs` | yes | A workflow's runs, newest first (`?limit=`, default 50, at most 200): status, what started it, its inputs and period, when, how long, and why it failed |
-| GET | `/runs/:runId` | yes | One run with every step it took, in order: `{ stepKey, actionName, status, input, output, error, durationMs, pathId, actorUserId, at }` (`actorUserId`: who answered a waiting step), the items an "each" arrow fanned out into (`children`), its `parent`, where the case is (`paths`: each path's step and state) and who it waits on or was answered by (`tasks`). Inputs hold no secret: a saved connection is recorded by its id |
-| POST | `/runs/:runId/cancel` | yes (`workflows:admin`) | `{ reason }` → stops a case still going; it fails as `CANCELLED` with who and why, and its tasks and links stop working. 400 `REASON_REQUIRED`, 409 `RUN_FINISHED` |
+| GET | `/runs/:runId` | yes | One run with every step it took, in order: `{ stepKey, actionName, status, input, output, error, durationMs, pathId, actorUserId, progress, log, at }` (`actorUserId`: who answered a waiting step; `progress`: a running step's newest numbers, e.g. `{ rowsWritten, percent, at }`, and `log`: its lines `[{ at, level, message }]`, both saved while it runs — ask again every few seconds to watch it move), the items an "each" arrow fanned out into (`children`), its `parent`, where the case is (`paths`: each path's step and state) and who it waits on or was answered by (`tasks`). Inputs hold no secret: a saved connection is recorded by its id |
+| POST | `/runs/:runId/cancel` | yes (`workflows:admin`) | `{ reason }` → stops a case still going — **including the step that is running**, which stops its own work (engine 4.3.1); it fails as `CANCELLED` with who and why, and its tasks and links stop working. 400 `REASON_REQUIRED`, 409 `RUN_FINISHED` |
 | POST | `/runs/:runId/retry` | yes (`workflows:admin`) | `{ reason }` → runs again the step a crash interrupted, once someone has checked it did not already do its work. 409 `NOT_INTERRUPTED` for any other case, `SEVERAL_PATHS` for one that was on several |
 | GET | `/triggers` | yes | The kinds of trigger on offer (`manual`, `api`, `schedule`, `job`, and any a host registers), each `{ kind, label, description, fields }`: build a trigger form from it, and it never offers a kind the engine refuses |
 | GET | `/workflows/by-trigger?kind=…&<setting>=…` | yes | The workflows a trigger starts, with `steps` — `?kind=job&jobId=<id>` is "what runs after this job". Each other query value matches that trigger setting |
@@ -441,7 +441,7 @@ The package reads this folder from disk (`"xeplr": { "readsFromDisk": ["migratio
 npm test          # node test/run.mjs — each *.test.mjs in its own process
 ```
 
-Plain scripts, no framework; each prints `ok`/`FAIL` lines and exits non-zero on failure. A suite that needs node flags declares them in a `// @flags:` header. `flows.test.mjs`, `triggersRoutes.test.mjs`, `tasksRoutes.test.mjs` and `authMigrations.test.mjs` need a real Postgres (`WORKFLOW_TEST_PG`) and are skipped without it; CI and the release start one, so neither ships on a skipped suite.
+Plain scripts, no framework; each prints `ok`/`FAIL` lines and exits non-zero on failure. A suite that needs node flags declares them in a `// @flags:` header. `flows.test.mjs`, `triggersRoutes.test.mjs`, `tasksRoutes.test.mjs`, `runProgress.test.mjs` and `authMigrations.test.mjs` need a real Postgres (`WORKFLOW_TEST_PG`) and are skipped without it; CI and the release start one, so neither ships on a skipped suite.
 
 | Suite | Covers |
 |---|---|
@@ -455,6 +455,7 @@ Plain scripts, no framework; each prints `ok`/`FAIL` lines and exits non-zero on
 - `/workflows/:id/trigger`
 - switching a trigger off
 - another company seeing none of it |
+| `runProgress.test.mjs` | On a real Postgres, over HTTP: `GET /runs/:runId` handing back a running step's numbers and log while it runs, moved when asked again; `POST /runs/:runId/cancel` stopping that step part-way, the case `CANCELLED` |
 | `tasksRoutes.test.mjs` | On a real Postgres, over HTTP: an approval saved and started; each person's `/tasks/mine` (not the requester's, not another company's); claim and the refusal to another; a reject needing a reason; a task for another role refused; the run showing who answered, the deciding step's actor and its paths; reassign and cancel needing reasons; retry refused for a case not interrupted; another company unable to cancel; the per-route permission check |
 | `authMigrations.test.mjs` | `@xeplr/auth`'s migrations then `migrations-auth/` applied to a scratch Postgres, as the auth server applies them: every workflow route row reaches a role besides Super Admin; the inbox for every role; the admin actions for the admins only, in `workflows:admin`; running every file again adds nothing |
 | `requires.test.mjs` | Every relative `require` in this package points at a file (Node only notices a missing one when the line runs) |
