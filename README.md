@@ -15,8 +15,6 @@ It runs two ways: **embedded**, where a host calls `registerWorkflow()` and moun
 | Triggers | What starts a workflow — manual, api, a schedule, a job finishing — saved on the workflow itself and listed by `/triggers`, `/workflows/by-trigger` and `/workflows/:id/trigger`. A job is also a step (`job-run`). Over the engine's `triggers`. |
 | Parameters checked first | A run's parameters are the union of what every step declares, validated before the run is recorded. |
 
-What it does not do yet: a step's timeout is saved but not enforced; a draft workflow can still be run; past runs are recorded but there is no screen to browse them.
-
 ## Install
 
 ```bash
