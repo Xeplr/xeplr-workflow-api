@@ -51,7 +51,7 @@ try {
   const base = `http://127.0.0.1:${server.address().port}/workflow`
 
   const kinds = await call(base + '/triggers')
-  check('GET /triggers lists the kinds', kinds.status === 200 && kinds.body.dataArray.map((k) => k.kind).join(',') === 'manual,api,schedule,job', kinds.body)
+  check('GET /triggers lists the kinds', kinds.status === 200 && kinds.body.dataArray.map((k) => k.kind).join(',') === 'manual,api,schedule,job,file,email', kinds.body)
   const jobKind = kinds.body.dataArray.find((k) => k.kind === 'job')
   check('...with the words and the fields a form asks for', jobKind && jobKind.label === 'A job finishes' && jobKind.fields.map((f) => f.name).join() === 'jobId,when', jobKind)
 
