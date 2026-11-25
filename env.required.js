@@ -26,6 +26,9 @@ module.exports = [
   ...require('@xeplr/email').templatesRequiredEnv, // EMAIL_DB_NAME
   ...require('@xeplr/actions').configRequiredEnv,  // XCFG_DB_NAME, XCFG_DB_CONNECTION_INFO_ENCRYPTED
   ...require('@xeplr/actions').requiredEnv,        // XEPLR_DATA_DIR — each tenant's step files under it
+  // THE CLOCK: schedules and the engine's due work run as jobs, in their own
+  // database. No default — a guessed name boots clean and reads as no jobs.
+  ...require('@xeplr/jobs').requiredEnv,           // DB_JOBS
 
   // App-specific — names this app chose (checked by the API process):
   //

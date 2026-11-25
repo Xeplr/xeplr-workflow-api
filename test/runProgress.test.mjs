@@ -27,8 +27,7 @@ const WF_DB = 'xeplr_wf_run_progress_test_' + Date.now()
 registerApplication('xeplr-workflow-test')
 await engine.startEngine({
   db: { name: WF_DB, connection: PG, connectionName: 'workflow_run_progress_test',
-    mts: { l1: { name: 'companyId', header: 'x-company-id' }, l2: { name: 'workspaceId', header: 'x-workspace-id' } } },
-  schedule: false, recover: false
+    mts: { l1: { name: 'companyId', header: 'x-company-id' }, l2: { name: 'workspaceId', header: 'x-workspace-id' } } }
 })
 
 // A load of a million rows, 1,000 a batch, 40 ms a batch: it reports every batch.

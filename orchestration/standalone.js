@@ -22,6 +22,14 @@ var engine = require('@xeplr/workflow-engine');
 var xcfgSetup = engine.xcfgSetup;
 var actionCatalog = engine.actionCatalog;
 var { registerWorkflow } = require('../index');
+var jobs = require('@xeplr/jobs');
+
+// Two tenancy levels, l1 = companyId / l2 = workspaceId — mirrored in
+// @xeplr-workflow/ui's src/main.jsx's own registerMTs() call for the standalone UI.
+var MTS = {
+  l1: { name: 'companyId', header: 'x-company-id' },
+  l2: { name: 'workspaceId', header: 'x-workspace-id' }
+};
 
 
 async function start() {
@@ -78,6 +86,24 @@ async function start() {
     console.warn('[api] email templates unavailable (' + err.message + ') — steps using templateName will fail until this is fixed');
   }
   await auth.ready();
+
+  // THE CLOCK — @xeplr/jobs. The engine runs no timer of its own: a workflow
+  // "On a schedule" is a job, and its due work (Wait boxes, reminders,
+  // watches, runs whose process died) is one system job, every minute. Its
+  // own database (DB_JOBS, from jobs' requiredEnv), migrated on start. This
+  // server mounts no jobs screens; jobs is here only to run them.
+  engine.jobActions.forEach(function(a) { jobs.registerAction(a); });
+  await jobs.init({
+    database: process.env.DB_JOBS,
+    connection: workflowConnection(),
+    connectionName: 'jobs',
+    migrate: true,
+    mts: MTS,
+    // A job a workflow started resumes its step; a finished job starts the
+    // workflows it triggers.
+    onFinish: function(report) { return engine.jobFinished(report); }
+  });
+
   var mtMembershipGate = mtMembershipMiddleware({ userTenantsMapping: auth.model('UserTenantsMapping') });
 
   await registerWorkflow({
@@ -87,13 +113,11 @@ async function start() {
     db: {
       name: process.env.DB_API,
       connection: workflowConnection(),
-      // Two tenancy levels, l1 = companyId / l2 = workspaceId — mirrored in
-      // @xeplr-workflow/ui's src/main.jsx's own registerMTs() call for the standalone UI.
-      mts: {
-        l1: { name: 'companyId', header: 'x-company-id' },
-        l2: { name: 'workspaceId', header: 'x-workspace-id' }
-      }
+      mts: MTS
     },
+    // How a step starts a job, and how a schedule becomes one (above).
+    startJob: function(jobId, body) { return jobs.trigger(jobId, body, { triggerType: 'workflow' }); },
+    keepSchedule: jobs.keepSchedule,
     port: process.env.WORKFLOW_PORT,
     mountPath: '/', // preserves today's URLs — no /workflow prefix standalone
     appName: 'xeplr_workflow_api',
@@ -113,6 +137,10 @@ async function start() {
     mtMembershipGate: mtMembershipGate,
     authMiddleware: authMiddleware
   });
+
+  // After the mount: the engine has kept its due-work job by now.
+  jobs.startScheduler();
+  console.log('[api] jobs scheduler running: schedules and due work');
 }
 
 start().catch(function(err) {
