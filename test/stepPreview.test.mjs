@@ -32,8 +32,7 @@ await engine.startEngine({
   db: {
     name: WF_DB, connection: PG, connectionName: 'workflow_step_preview_test',
     mts: { l1: { name: 'companyId', header: 'x-company-id' }, l2: { name: 'workspaceId', header: 'x-workspace-id' } }
-  },
-  schedule: false
+  }
 })
 
 const HEADERS = { 'content-type': 'application/json', 'x-company-id': 'c1', 'x-workspace-id': 'w1' }
@@ -84,7 +83,6 @@ try {
 } catch (err) {
   check('no error', false, err.stack || err.message)
 } finally {
-  engine.triggers.stopTicking()
   await engine.db.conn().destroy().catch(() => {})
   const admin = require('knex')({ client: 'pg', connection: { ...PG, database: 'postgres' } })
   await admin.raw(`DROP DATABASE IF EXISTS "${WF_DB}" WITH (FORCE)`).catch(() => {})

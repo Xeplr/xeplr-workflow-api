@@ -34,8 +34,15 @@ npm run db:create      # creates the DB_API database
 npm run start-api      # NODE_ENV=development node ./bin/www — listens on WORKFLOW_PORT
 ```
 
-`start-api` runs the engine's migrations on boot, so `migrate:up` is only
-needed to migrate without starting the server.
+`start-api` runs the engine's migrations on boot, and `@xeplr/jobs`' in its own
+database (`DB_JOBS`, created if missing), so `migrate:up` is only needed to
+migrate without starting the server.
+
+**Its clock is `@xeplr/jobs`.** The engine runs no timer of its own: a workflow
+"On a schedule" is a job, and the engine's due work — Wait boxes, reminders and
+escalations, file and email watches, runs whose process died — is the system job
+`workflow-due`, every minute. The standalone server starts the jobs scheduler
+for both. It mounts no jobs screens; jobs is here only to run them.
 
 | Script | What it does |
 |---|---|
@@ -53,14 +60,16 @@ Required services for standalone:
 
 | Service | Why |
 |---|---|
-| PostgreSQL | `DB_API` (this package's tables), `XCFG_DB_NAME` (shared `xeplr_configs`), `EMAIL_DB_NAME` (template store) |
+| PostgreSQL | `DB_API` (this package's tables), `DB_JOBS` (the jobs that run schedules and due work), `XCFG_DB_NAME` (shared `xeplr_configs`), `EMAIL_DB_NAME` (template store) |
 | An `@xeplr/auth` server + its database | `@xeplr/auth` `attach()` reads users/tenant grants from `AUTH_DB_NAME`; the createApp gate validates tokens against `AUTH_URL`. This package has **no** `start-auth` script — the auth server is run separately (`xeplr-auth-server`), and it applies `migrations-auth/` via `XEPLR_AUTH_MIGRATIONS` |
 
 Boot order (`orchestration/standalone.js`): load `<NODE_ENV>.env` → `checkEnv`
 → `registerApplication(WORKFLOW_APPLICATION_ID || 'xeplr-workflow')` → run
 migrations → `xeplr_configs` ready (**fail-fast**) → register action catalog →
 `@xeplr/auth` attach + email config → email templates (**best-effort**) →
-`registerWorkflow({ port, mountPath: '/', auth: { publicPaths: ['/public/', '/events'] }, ... })`.
+`@xeplr/jobs` `init({ migrate: true })` with the engine's `jobActions` registered →
+`registerWorkflow({ port, mountPath: '/', auth: { publicPaths: ['/public/', '/events'] }, startJob, keepSchedule, ... })`
+→ `jobs.startScheduler()`.
 
 ### Embedded (how Xeplr BI does it)
 
@@ -70,13 +79,23 @@ migrations → `xeplr_configs` ready (**fail-fast**) → register action catalog
 
 // host startup, after the host's own registerApplication() and registerMTs()
 var { registerWorkflow } = require('@xeplr/workflow-api');
+var jobs = require('@xeplr/jobs');               // the host's own, already init()ed
+var engine = require('@xeplr/workflow-engine');
+engine.jobActions.forEach(jobs.registerAction);   // in every process that runs jobs
 var { router } = await registerWorkflow({
   db: { name: process.env.DB_WORKFLOW, connection: hostConnection, connectionName: 'workflow' },
   mtMembershipGate: hostGate,
-  authMiddleware: require('@xeplr/auth').authMiddleware
+  authMiddleware: require('@xeplr/auth').authMiddleware,
+  startJob: (jobId, body) => jobs.trigger(jobId, body),
+  keepSchedule: jobs.keepSchedule                 // schedules and due work run as jobs
 });
 routes['/workflow'] = router;   // into createApp's route map, not app.use() afterwards
 ```
+
+**A host needs `@xeplr/jobs` (a peer dependency) and its scheduler running in
+some process.** Without `keepSchedule` a schedule trigger is refused on save,
+and nothing is due-checked — a Wait box never wakes, no reminder goes out, a
+crashed run is never picked up. There is no fallback timer.
 
 Embedded, `registerWorkflow` creates the database if missing, runs this
 package's migrations (plus `XEPLR_WORKFLOW_MIGRATIONS` or `config.migrations`),
@@ -127,6 +146,7 @@ git-ignored (`.gitignore`) because it carries secrets. Never commit it.
 | `XEPLR_DATA_DIR` | The root of all data, absolute and existing. A step's files are in the run's tenant folder under it, `<root>/<app>/<company>/<workspace>/`; temporary ones in its `tmp/` | `@xeplr/actions` `requiredEnv` |
 | `XCFG_DB_NAME`, `XCFG_DB_CONNECTION_INFO_ENCRYPTED` | Shared `xeplr_configs` control-plane DB | `@xeplr/actions` `configRequiredEnv` |
 | `DB_API` | This package's database name | app |
+| `DB_JOBS` | The jobs database: schedules and the engine's due work run as jobs. No default — a guessed name boots clean and reads as no jobs | `@xeplr/jobs` `requiredEnv` |
 | `WORKFLOW_PORT` | API port | app |
 | `AUTH_SUPER_ADMIN_PASSWORD` | First account's password, consumed by auth's super-admin migration | app |
 
@@ -183,7 +203,9 @@ The engine (runner, flows facade, action catalog, models, workflow's own migrati
 
 `registerWorkflow` config: `app`, `db` (`{ name, connection, connectionName?, mts? }`),
 `applicationId`, `mountPath`, `port`, `appName` (default `xeplr_workflow_api`),
-`mtMembershipGate`, `authMiddleware`, `middleware`, `log`, `auth`, `migrations`.
+`mtMembershipGate`, `authMiddleware`, `middleware`, `log`, `auth`, `migrations`,
+and everything `startEngine` takes — `startJob`, `keepSchedule` (`jobs.keepSchedule`:
+the engine's clock), `onTask`, `resolveConnection`, `lease`.
 Pass `db.mts` only when nothing else in the process has called `registerMTs()`
 (it is process-global).
 
@@ -230,6 +252,8 @@ POST /workflows/save
    "steps": [{ "stepKey": "report", "actionName": "job-run", "kind": "wait", "position": 0,
                "values": { "jobId": "<report job>", "callbackUrl": "{resumeUrl}" } }] }]
 ```
+
+**A schedule is a job.** Saving a published workflow with `{ "kind": "schedule", "cron": "0 9 * * 1", "timezone": "Asia/Kolkata" }` keeps a job of `@xeplr/jobs` for it once the save commits, in the caller's company: it shows on the Jobs screen as "Workflow: <name>", and pausing it there pauses the workflow. A draft, a trigger switched off or changed, or a delete removes it. A time zone the server cannot read is refused with 400.
 
 There are no job-chain routes any more. A job's "After this job" is an ordinary workflow with a job trigger: the jobs screen reads the workflows a job starts from `/workflows/by-trigger?kind=job&jobId=…` and saves them through `/workflows/save`.
 
@@ -432,6 +456,7 @@ The package reads this folder from disk (`"xeplr": { "readsFromDisk": ["migratio
 | `resumeByKey` refuses (`RESUME_KEY_NOT_READY`) until the step is `waiting`; claim is an atomic conditional patch | The key exists before the action finishes (mail scanners pre-fetch links); resuming mid-action would route the run on while the action is still running |
 | `job-run`: HTTP 409 from the jobs API is a failure, not a retry | A chain must not continue past a movement that never ran |
 | Role matrix: Creator can run, Viewer cannot | A run has side effects (mail, files, database writes) |
+| No timer: schedules and due work are jobs of `@xeplr/jobs` (`keepSchedule`) | One clock for the install. A second loop beside jobs' scheduler duplicated its cron and could not be paused or seen on the Jobs screen |
 
 ## Tests
 
@@ -446,6 +471,7 @@ Plain scripts, no framework; each prints `ok`/`FAIL` lines and exits non-zero on
 | `flows.test.mjs` | On a real Postgres: the `/flows` routes over the real engine — flows as workflows, steps and arrows, runs and submits |
 | `triggersRoutes.test.mjs` | Triggers over HTTP on the real engine and Postgres (`WORKFLOW_TEST_PG`, skipped without it):
 - a job trigger saved as part of an ordinary workflow
+- a schedule saved through the route becoming a job of the real `@xeplr/jobs` after the commit, in the caller's company, removed for a draft and on delete, back when published; the due-work system job; an unknown time zone refused
 - a bad cron and an unknown kind refused with the reason
 - an arrow written as `when` saved with its compiled condition, and a bad one refused
 - `/triggers`

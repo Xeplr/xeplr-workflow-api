@@ -42,8 +42,7 @@ const engine = require('@xeplr/workflow-engine')
 const WF_DB = 'xeplr_wf_flows_test_' + Date.now()
 registerApplication('xeplr-workflow-test')
 await engine.startEngine({
-  db: { name: WF_DB, connection: PG, connectionName: 'workflow_flows_test', mts: { l1: { name: 'companyId', header: 'x-company-id' } } },
-  schedule: false, recover: false
+  db: { name: WF_DB, connection: PG, connectionName: 'workflow_flows_test', mts: { l1: { name: 'companyId', header: 'x-company-id' } } }
 })
 const stepRunOf = (runId, stepKey) => runWithMt({ mtId1: 'c1' }, () =>
   engine.db.model('WorkflowStepRun').query().where({ runId, stepKey }).first())

@@ -4,7 +4,9 @@
 // saved as part of an ordinary workflow through /workflows/save and refused
 // there when it could never fire; the kinds on offer; the workflows a given
 // trigger starts (what the jobs screen's "After this job" reads); what one
-// workflow's trigger last did; and another company seeing none of it.
+// workflow's trigger last did; and another company seeing none of it. A
+// schedule saved through the route is a job of the real @xeplr/jobs, kept after
+// the save commits, removed when it is unpublished or deleted.
 //
 // Needs WORKFLOW_TEST_PG = '{"host":"localhost","port":5432,"user":"…","password":"…"}'.
 import { createRequire } from 'node:module'
@@ -19,19 +21,23 @@ if (!PG) {
 const express = require('express')
 const { registerApplication, mtMiddleware } = require('@xeplr/db')
 const engine = require('@xeplr/workflow-engine')
+const jobs = require('@xeplr/jobs')
 const buildWorkflowRouter = require('../lib/router')
 
 const results = []
 const check = (n, c, extra) => { results.push(c); console.log((c ? '  ok   ' : '  FAIL ') + n + (c || extra === undefined ? '' : ' — ' + JSON.stringify(extra).slice(0, 400))) }
 
 const WF_DB = 'xeplr_wf_trigger_routes_test_' + Date.now()
+const JOBS_DB = 'xeplr_wf_trigger_routes_jobs_test_' + Date.now()
 registerApplication('xeplr-workflow-test')
+engine.jobActions.forEach((a) => jobs.registerAction(a))
+const jobsConn = await jobs.init({ database: JOBS_DB, connection: PG, connectionName: 'jobs_trigger_routes_test', defaultActions: false, migrate: true })
 await engine.startEngine({
   db: {
     name: WF_DB, connection: PG, connectionName: 'workflow_trigger_routes_test',
     mts: { l1: { name: 'companyId', header: 'x-company-id' }, l2: { name: 'workspaceId', header: 'x-workspace-id' } }
   },
-  schedule: false
+  keepSchedule: jobs.keepSchedule
 })
 
 const HEADERS = { 'content-type': 'application/json', 'x-company-id': 'c1', 'x-workspace-id': 'w1' }
@@ -62,7 +68,22 @@ try {
   check('a job trigger saves as part of an ordinary workflow', saved.status === 200, saved.body)
   const id = saved.body && saved.body.updatedIds && saved.body.updatedIds[0]
   await call(base + '/workflows/save', 'POST', [{ name: 'After another job', status: 'published', trigger: { kind: 'job', jobId: 'jOther' }, steps: [step] }])
-  await call(base + '/workflows/save', 'POST', [{ name: 'Mondays', status: 'published', trigger: { kind: 'schedule', cron: '0 9 * * 1' }, steps: [step] }])
+  const mondays = await call(base + '/workflows/save', 'POST', [{ name: 'Mondays', status: 'published', trigger: { kind: 'schedule', cron: '0 9 * * 1', timezone: 'Asia/Kolkata' }, steps: [step] }])
+  const mId = mondays.body.updatedIds[0]
+  const jobOf = (wid) => jobsConn('jobs').where({ id: wid, isActive: true }).first()
+  const mJob = await jobOf(mId)
+  check('a schedule saved through the route is a job once the save commits, in the caller\'s company', mJob && mJob.schedule === '0 9 * * 1' &&
+    mJob.timezone === 'Asia/Kolkata' && mJob.actionName === 'workflow-scheduled' && mJob.mtId1 === 'c1' && mJob.mtId2 === 'w1', mJob)
+  await call(base + '/workflows/save', 'POST', [{ id: mId, name: 'Mondays', status: 'draft' }])
+  check('...a draft has none', !(await jobOf(mId)))
+  await call(base + '/workflows/save', 'POST', [{ id: mId, name: 'Mondays', status: 'published' }])
+  check('...published again, it is back', Boolean(await jobOf(mId)))
+  const del = await call(base + '/workflows/delete', 'POST', { ids: [mId] })
+  check('...and deleting the workflow removes it', del.status === 200 && !(await jobOf(mId)), del.body)
+  const due = await jobsConn('jobs').where({ id: 'workflow-due' }).first()
+  check('the due work is a system job of every company', due && due.system === true && due.mtId1 === '*')
+  const zone = await call(base + '/workflows/save', 'POST', [{ name: 'Mars time', trigger: { kind: 'schedule', cron: '0 9 * * 1', timezone: 'Mars/Olympus' }, steps: [step] }])
+  check('a time zone nobody has is refused with 400, saying so', zone.status === 400 && /not a time zone/.test(zone.body.message), zone.body)
 
   const bad = await call(base + '/workflows/save', 'POST', [{ name: 'Broken', trigger: { kind: 'schedule', cron: 'every day' }, steps: [step] }])
   check('a trigger that could never fire is refused with 400, saying why', bad.status === 400 && bad.body.code === 'TRIGGER_INVALID' && /cron expression/.test(JSON.stringify(bad.body)), bad)
@@ -146,10 +167,11 @@ try {
 } catch (err) {
   check('no error', false, err.stack || err.message)
 } finally {
-  engine.triggers.stopTicking()
+  await jobsConn.destroy().catch(() => {})
   await engine.db.conn().destroy().catch(() => {})
   const admin = require('knex')({ client: 'pg', connection: { ...PG, database: 'postgres' } })
   await admin.raw(`DROP DATABASE IF EXISTS "${WF_DB}" WITH (FORCE)`).catch(() => {})
+  await admin.raw(`DROP DATABASE IF EXISTS "${JOBS_DB}" WITH (FORCE)`).catch(() => {})
   await admin.destroy()
   const failed = results.filter((c) => !c).length
   console.log(`\n${results.length - failed}/${results.length} passed`)
